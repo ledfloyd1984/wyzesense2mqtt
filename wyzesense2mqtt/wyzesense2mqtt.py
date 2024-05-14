@@ -31,7 +31,8 @@ SENSORS_CONFIG_FILE = "sensors.yaml"
 DEVICE_CLASSES = {
     **dict.fromkeys([0x01, 0x0E, 'switch', 'switchv2'], 'opening'),
     **dict.fromkeys([0x02, 0x0F, 'motion', 'motionv2'], 'motion'),
-    **dict.fromkeys([0x03, 'leak'], 'moisture')
+    **dict.fromkeys([0x03, 'leak'], 'moisture'),
+    **dict.fromkeys([0x05, 'keypad'], 'keypad')
 }
 
 # Read data from YAML file
@@ -283,33 +284,57 @@ def send_discovery_topics(sensor_mac):
     device_payload = {
         'identifiers': [f"wyzesense_{sensor_mac}", sensor_mac],
         'manufacturer': "Wyze",
-        'model': (
-            "Sense Motion Sensor" if (sensor_class == "motion")
-            else "Sense Contact Sensor"
-        ),
+        'model': "Sense Device",
         'name': sensor_name,
         'sw_version': sensor_version
     }
 
-    entity_payloads = {
-        'state': {
-            'name': sensor_name,
-            'dev_cla': sensor_class,
-            'pl_on': "1",
-            'pl_off': "0",
-            'json_attr_t': f"{CONFIG['self_topic_root']}/{sensor_mac}"
-        },
-        'signal_strength': {
-            'name': f"{sensor_name} Signal Strength",
-            'dev_cla': "signal_strength",
-            'unit_of_meas': "dBm"
-        },
-        'battery': {
-            'name': f"{sensor_name} Battery",
-            'dev_cla': "battery",
-            'unit_of_meas': "%"
+    if sensor_class == "keypad":
+        entity_payloads = {
+            'state': {
+                'name': sensor_name,
+                'dev_cla': sensor_class,
+                'pl_on': "1",
+                'pl_off': "0",
+                'json_attr_t': f"{CONFIG['self_topic_root']}/{sensor_mac}"
+            },
+            'signal_strength': {
+                'name': f"{sensor_name} Signal Strength",
+                'dev_cla': "signal_strength",
+                'unit_of_meas': "dBm"
+            },
+            'battery': {
+                'name': f"{sensor_name} Battery",
+                'dev_cla': "battery",
+                'unit_of_meas': "%"
+            }
+            'mode': {
+                'name': f"{sensor_name} Alarm Mode"
+            }
+            'pin': {
+                'name': f"{sensor_name} Pin Number"
+            }
         }
-    }
+    else:
+        entity_payloads = {
+            'state': {
+                'name': sensor_name,
+                'dev_cla': sensor_class,
+                'pl_on': "1",
+                'pl_off': "0",
+                'json_attr_t': f"{CONFIG['self_topic_root']}/{sensor_mac}"
+            },
+            'signal_strength': {
+                'name': f"{sensor_name} Signal Strength",
+                'dev_cla': "signal_strength",
+                'unit_of_meas': "dBm"
+            },
+            'battery': {
+                'name': f"{sensor_name} Battery",
+                'dev_cla': "battery",
+                'unit_of_meas': "%"
+            }
+        }
 
     for entity, entity_payload in entity_payloads.items():
         entity_payload['val_tpl'] = f"{{{{ value_json.{entity} }}}}"
@@ -469,28 +494,26 @@ def on_event(WYZESENSE_DONGLE, event):
             state_topic = f"{CONFIG['self_topic_root']}/{event.MAC}"
             mqtt_publish(state_topic, event_payload)
         elif(event.Type == "water"):
-            (water, ext_water, has_ext, battery, signal) = event.Data
+            LOGGER.info(f"Water event data: {event}")
+            (water_detected, has_probe, battery, signal) = event.Data
             # Build event payload
             event_payload = {
                 'event': event.Type,
                 'available': True,
                 'mac': event.MAC,
-                'device_class': 'leak',
+                'device_class': 'moisture',
                 'last_seen': event.Timestamp.timestamp(),
                 'last_seen_iso': event.Timestamp.isoformat(),
                 'signal_strength': signal * -1,
                 'battery': battery,
-                'state' : {
-                    'water' : water,
-                    'ext_water' : ext_water,
-                    'has_ext' : has_ext
-                }
+                'state': water_detected
             }
             LOGGER.debug(event_payload)
 
             state_topic = f"{CONFIG['self_topic_root']}/{event.MAC}"
             mqtt_publish(state_topic, event_payload)
         elif(event.Type == "keypadMotion"):
+            LOGGER.info(f"Keypad motion event data: {event}")
             (motion, battery, signal) = event.Data
             # Build event payload
             event_payload = {
@@ -509,13 +532,13 @@ def on_event(WYZESENSE_DONGLE, event):
             state_topic = f"{CONFIG['self_topic_root']}/{event.MAC}"
             mqtt_publish(state_topic, event_payload)
         elif(event.Type == "keypadMode"):
+            LOGGER.info(f"Keypad mode event data: {event}")
             (mode, battery, signal) = event.Data
             # Build event payload
             event_payload = {
                 'event': event.Type,
                 'available': True,
                 'mac': event.MAC,
-                'device_class': 'keypadMode',
                 'last_seen': event.Timestamp.timestamp(),
                 'last_seen_iso': event.Timestamp.isoformat(),
                 'signal_strength': signal * -1,
@@ -527,13 +550,13 @@ def on_event(WYZESENSE_DONGLE, event):
             state_topic = f"{CONFIG['self_topic_root']}/{event.MAC}/mode"
             mqtt_publish(state_topic, event_payload)
         elif(event.Type == "keypadPin"):
+            LOGGER.info(f"Keypad PIN event data: {event}")
             (pinBytes, battery, signal) = event.Data
             # Build event payload
             event_payload = {
                 'event': event.Type,
                 'available': True,
                 'mac': event.MAC,
-                'device_class': 'keypadPin',
                 'last_seen': event.Timestamp.timestamp(),
                 'last_seen_iso': event.Timestamp.isoformat(),
                 'signal_strength': signal * -1,
@@ -545,6 +568,7 @@ def on_event(WYZESENSE_DONGLE, event):
             state_topic = f"{CONFIG['self_topic_root']}/{event.MAC}/pin"
             mqtt_publish(state_topic, event_payload)
         elif(event.Type == "climate"):
+            LOGGER.info(f"Climate event data: {event}")
             (temperature, humidity, battery, signal) = event.Data
             # Build event payload
             event_payload = {

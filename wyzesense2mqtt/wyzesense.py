@@ -59,7 +59,7 @@ class Packet(object):
     # Notifications initiated from dongle side
     NOTIFY_SENSOR_ALARM = MAKE_CMD(TYPE_ASYNC, 0x19)
     NOTIFY_SENSOR_SCAN = MAKE_CMD(TYPE_ASYNC, 0x20)
-    NOITFY_SYNC_TIME = MAKE_CMD(TYPE_ASYNC, 0x32)
+    NOTIFY_SYNC_TIME = MAKE_CMD(TYPE_ASYNC, 0x32)
     NOTIFY_EVENT_LOG = MAKE_CMD(TYPE_ASYNC, 0x35)
     NOTIFY_HMS_EVENT = MAKE_CMD(TYPE_ASYNC, 0x55)
 
@@ -218,7 +218,7 @@ class Packet(object):
 
     @classmethod
     def SyncTimeAck(cls):
-        return cls(cls.NOITFY_SYNC_TIME + 1, struct.pack(">Q", int(time.time() * 1000)))
+        return cls(cls.NOTIFY_SYNC_TIME + 1, struct.pack(">Q", int(time.time() * 1000)))
 
     @classmethod
     def AsyncAck(cls, cmd):
@@ -240,15 +240,15 @@ class SensorEvent(object):
         elif self.Type == 'status':
             s += "StatusEvent: sensor_type=%s, state=%s, battery=%d, signal=%d" % self.Data
         elif self.Type == 'water':
-            s += "WaterEvent: water=%d ext_water=%d has_ext=%d battery=%d signal=%d" % self.Data
+            s += "WaterEvent: water_detected=%d has_probe=%d battery=%d signal=%d" % self.Data
         elif self.Type == 'climate':
             s += "ClimateEvent: temperature=%d humidity=%d battery=%d signal=%d" % self.Data
         elif self.Type == 'keypadMode':
             s += "KeypadModeEvent: mode=%d, battery=%d signal=%d" % self.Data
         elif self.Type == 'keypadMotion':
-            s += "KeypadModeEvent: motion=%d, battery=%d signal=%d" % self.Data
+            s += "KeypadMotionEvent: motion=%d, battery=%d signal=%d" % self.Data
         elif self.Type == 'keypadPin':
-            s+= "KeyPadPinEvent: pin=%s battery=%d signal=%d" % self.Data
+            s += "KeyPadPinEvent: pin=%s battery=%d signal=%d" % self.Data
         else:
             s += "RawEvent: type=%s, data=%s" % (self.Type, bytes_to_hex(self.Data))
         return s
@@ -329,11 +329,12 @@ class Dongle(object):
             typeByte, mac = struct.unpack_from(">B8s", pkt.Payload); 
             mac = mac.decode('ascii')  
             water = pkt.Payload[0x0F]
-            ext_water = pkt.Payload[0x10]
-            has_ext = pkt.Payload[0x11]
+            water_probe = pkt.Payload[0x10]
+            has_probe = pkt.Payload[0x11]
             signal = pkt.Payload[0x14]
             battery = pkt.Payload[0x0C]
-            e = SensorEvent(mac, datetime.datetime.utcnow(), "water", (water, ext_water, has_ext, battery, signal))
+            water_detected = water or water_probe
+            e = SensorEvent(mac, datetime.datetime.utcnow(), "water", (water_detected, has_probe, battery, signal))
             self.__on_event(self, e)
         elif payloadSubType == 0x0A or payloadSubType == 0x02:
             typeByte, mac = struct.unpack_from(">B8s", pkt.Payload); 
@@ -371,7 +372,7 @@ class Dongle(object):
         self.__on_event = event_handler
 
         self.__handlers = {
-            Packet.NOITFY_SYNC_TIME: self._OnSyncTime,
+            Packet.NOTIFY_SYNC_TIME: self._OnSyncTime,
             Packet.NOTIFY_SENSOR_ALARM: self._OnSensorAlarm,
             Packet.NOTIFY_EVENT_LOG: self._OnEventLog,
             Packet.NOTIFY_HMS_EVENT: self._OnHMSEvent,
